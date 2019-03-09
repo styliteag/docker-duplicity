@@ -44,6 +44,7 @@ RUN apk add --no-cache \
         ncftp \
         openssh \
         openssl \
+        rsync \
         py2-gobject3
 
 # Default backup source directory
