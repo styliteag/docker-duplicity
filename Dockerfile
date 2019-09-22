@@ -1,6 +1,6 @@
 FROM python:2-alpine AS latest
 
-ARG DUPLICITY_VERSION=0.7.19
+ARG DUPLICITY_VERSION=0.8.04
 
 ENV CRONTAB_15MIN='*/15 * * * *' \
     CRONTAB_HOURLY='0 * * * *' \
@@ -45,7 +45,9 @@ RUN apk add --no-cache \
         openssh \
         openssl \
         rsync \
-        py2-gobject3
+        py2-gobject3 \
+        tzdata \
+    && sync
 
 # Default backup source directory
 RUN mkdir -p "$SRC"
@@ -59,32 +61,34 @@ RUN apk add --no-cache --virtual .build \
         krb5-dev \
         libffi-dev \
         librsync-dev \
-        linux-headers \
+        libxml2-dev \
+        libxslt-dev \
         openssl-dev \
-        python-dev \
-    && pip install --no-cache-dir --no-use-pep517 \
-        azure-storage \
-        b2 \
-        boto \
-        dropbox \
-        gdata \
-        lockfile \
-        mediafire \
-        mega.py \
-        paramiko \
-        pexpect \
-        pycryptopp \
-        PyDrive \
-        pykerberos \
-        pyrax \
-        python-keystoneclient \
-        python-swiftclient \
-        PyNaCl==1.2.1 \
+    # Runtime dependencies, based on https://bazaar.launchpad.net/~duplicity-team/duplicity/0.8-series/view/head:/requirements.txt
+    && pip install --no-cache-dir \
+        # Basic dependencies
+        fasteners \
+        future \
+        mock \
         requests \
-        requests-oauthlib \
         urllib3 \
-        https://code.launchpad.net/duplicity/$(echo $DUPLICITY_VERSION | sed -r 's/^([0-9]+\.[0-9]+)([0-9\.]*)$/\1/')-series/$DUPLICITY_VERSION/+download/duplicity-$DUPLICITY_VERSION.tar.gz \
+        # Backend libraries
+        azure \
+        b2 \
+        b2sdk \
+        boto \
+        dropbox==6.9.0 \
+        gdata \
+        jottalib \
+        mediafire \
+        paramiko \
+        pydrive \
+        python-swiftclient \
+        requests_oauthlib \
+        # Duplicity from source code
+        https://launchpad.net/duplicity/$(echo $DUPLICITY_VERSION | sed -r 's/^([0-9]+\.[0-9]+)([0-9\.]*)$/\1/')-series/$DUPLICITY_VERSION/+download/duplicity-$DUPLICITY_VERSION.tar.gz \
     && apk del .build
+
 COPY bin/* /usr/local/bin/
 RUN chmod a+rx /usr/local/bin/* && sync
 
@@ -102,7 +106,7 @@ LABEL org.label-schema.schema-version="1.0" \
 FROM latest AS latest-s3
 ENV JOB_500_WHAT='dup full $SRC $DST' \
     JOB_500_WHEN='weekly' \
-    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname)- --file-prefix-manifest manifest-$(hostname)- --file-prefix-signature signature-$(hostname)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
+    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname -f)- --file-prefix-manifest manifest-$(hostname -f)- --file-prefix-signature signature-$(hostname -f)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
 
 
 FROM latest AS docker
@@ -112,17 +116,17 @@ RUN apk add --no-cache docker
 FROM docker AS docker-s3
 ENV JOB_500_WHAT='dup full $SRC $DST' \
     JOB_500_WHEN='weekly' \
-    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname)- --file-prefix-manifest manifest-$(hostname)- --file-prefix-signature signature-$(hostname)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
+    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname -f)- --file-prefix-manifest manifest-$(hostname -f)- --file-prefix-signature signature-$(hostname -f)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
 
 
 FROM latest AS postgres
 RUN apk add --no-cache postgresql --repository http://dl-cdn.alpinelinux.org/alpine/v3.9/main
-ENV JOB_200_WHAT='pg_dump --no-owner --no-privileges --file "$SRC/$PGDATABASE.sql"' \
-    JOB_200_WHEN='daily weekly' \
+ENV JOB_200_WHAT psql -0Atd postgres -c \"SELECT datname FROM pg_database WHERE NOT datistemplate AND datname != \'postgres\'\" | xargs -0tI DB pg_dump --dbname DB --no-owner --no-privileges --file \"\$SRC/DB.sql\"
+ENV JOB_200_WHEN='daily weekly' \
     PGHOST=db
 
 
 FROM postgres AS postgres-s3
 ENV JOB_500_WHAT='dup full $SRC $DST' \
     JOB_500_WHEN='weekly' \
-    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname)- --file-prefix-manifest manifest-$(hostname)- --file-prefix-signature signature-$(hostname)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
+    OPTIONS_EXTRA='--metadata-sync-mode partial --full-if-older-than 1W --file-prefix-archive archive-$(hostname -f)- --file-prefix-manifest manifest-$(hostname -f)- --file-prefix-signature signature-$(hostname -f)- --s3-european-buckets --s3-multipart-chunk-size 10 --s3-use-new-style'
