@@ -66,8 +66,8 @@ Subject of the email report. You can use these placeholders:
 - `{result}` will be:
   - `OK` if all worked fine.
   - `ERROR` if any job failed.
-- `{hostname}` will be the container's host name, which you should explicitly
-  set.
+- `{hostname}` will be the container's host name, including the domainname
+  (a.k.a. FQDN).
 
 ### `EMAIL_TO`
 
@@ -110,12 +110,21 @@ What to back up.
 
 Example: `file:///mnt/my_files`
 
+### `TZ`
+
+Define a valid timezone (i.e. `Europe/Madrid`) to make log hours match your
+local reality.
+
+This is achieved directly by bundling [the `tzdata` package][tzdata].
+Refer to its docs for more info.
+
 ## Set a custom hostname!
 
 Duplicity checks the host name that it backs up and aborts the process if it
 detects a mismatch by default.
 
-Docker uses volatile host names, so you better add `--hostname` when running
+Docker uses volatile host names, so you better add `--hostname`
+(and maybe also `--domainname`) when running
 this container to make profit of this feature, or add `--allow-source-mismatch`
 to `OPTIONS` environment variable. Otherwise, you will get errors like:
 
@@ -188,7 +197,6 @@ services:
         hostname: my.postgres.backup
         environment:
             # Postgres connection
-            PGDATABASE: mydb
             PGHOST: db  # This is the default
             PGPASSWORD: mypass
             PGUSER: myuser
@@ -202,6 +210,8 @@ services:
             OPTIONS: --s3-european-buckets --s3-use-new-style
             PASSPHRASE: example backkup encryption secret
 ```
+
+It will backup automatically all databases except templates and `postgres`.
 
 Check the `postgres.Dockerfile` file to see additional built-in jobs.
 
@@ -276,3 +286,4 @@ your will.
 [odoobase]: https://hub.docker.com/r/tecnativa/odoo-base/builds/
 [options]: http://duplicity.nongnu.org/duplicity.1.html#sect5
 [PostgreSQL]: https://www.postgresql.org/
+[tzdata]: https://pkgs.alpinelinux.org/package/edge/main/aarch64/tzdata
